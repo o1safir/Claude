@@ -1081,7 +1081,8 @@ function vMere(c){
   <section class="block"><div class="block-h"><h3>AI</h3><span class="pill ${sampleFn?'ok':apiKey()?'acc':'warn'}">${sampleFn?'Kører på din Claude-konto':apiKey()?'API-nøgle':'Ikke slået til'}</span></div><div class="panel grid wide">
     <p class="hint full" style="grid-column:1/-1;margin:0">${sampleFn?'Når værktøjet åbnes i Claude, bruger AI din egen Claude-konto – du bliver spurgt om lov første gang. Der skal ikke bruges nogen nøgle.':'Åbn værktøjet i Claude-appen for at bruge AI med din Claude-konto. Uden for Claude kan du i stedet indsætte en API-nøgle her.'}</p>
     ${sampleFn?'':`<label class="f full" for="apiKey"><span>Anthropic API-nøgle (valgfri)</span><input type="text" id="apiKey" value="${esc(key)}" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"><p class="hint">Gemmes kun i denne browser. Opret en nøgle på console.anthropic.com.</p></label>
-    <label class="f" for="apiModel"><span>Model</span><select id="apiModel">${[['claude-opus-5','Claude Opus 5 (anbefalet)'],['claude-sonnet-5','Claude Sonnet 5 (billigere)']].map(([k,v])=>`<option value="${k}"${model===k?' selected':''}>${v}</option>`).join('')}</select></label>`}
+    <label class="f" for="apiModel"><span>Model</span><select id="apiModel">${[['claude-opus-5','Claude Opus 5 (anbefalet)'],['claude-sonnet-5','Claude Sonnet 5 (billigere)']].map(([k,v])=>`<option value="${k}"${model===k?' selected':''}>${v}</option>`).join('')}</select></label>
+    <div class="row full" style="grid-column:1/-1"><button type="button" class="btn pri" data-act="ai-gem">Gem</button><span class="hint">${apiKey()?'Gemt. Nøglen ligger kun i denne browser.':'Intet gemt endnu.'}</span></div>`}
   </div></section>
   ${bbrMere()}
   <section class="block"><div class="block-h"><h3>Om værdierne</h3></div><div class="panel"><p class="hint" style="margin:0">U-værdier, ψ-værdier, rudeværdier og b-faktorer i listerne er vejledende standardværdier til hurtig registrering. Kontrollér altid mod Håndbog for Energikonsulenter og de faktiske forhold, før data tastes i Energy10 – du står inde for energimærket.</p></div></section>`;
@@ -1233,7 +1234,7 @@ document.addEventListener('input',e=>{
   else if(t.dataset.gv){const[k,rid,fk]=t.dataset.gv.split(':');const r=vRows(G(c),k).find(x=>x.id===rid);if(r){r[fk]=t.value;if((fk==='b'||fk==='h')&&/^Tidligere registreret/.test(r.note||''))r.note='';save();updateCalcs();}}
   else if(t.dataset.lag){const[id,i,k]=t.dataset.lag.split(':');const f=getItem(c,'flader',id);if(f&&f.lag[i]){f.lag[i][k]=t.value;save();updateCalcs();}}
   else if(t.id==='chatIn'){chat.draft=t.value;}
-  else if(t.id==='apiKey'){lsSet(LS_KEY,t.value.trim());}
+  else if(t.id==='apiKey'){aiMem.k=t.value.trim();lsSet(LS_KEY,aiMem.k);}
 });
 document.addEventListener('change',async e=>{
   const t=e.target,c=cur();
@@ -1310,7 +1311,14 @@ async function addPhotos(c,files,kat,el){
 // Inde i Claude bruges brugerens egen Claude-konto (capability "sample"); ellers en valgfri API-nøgle.
 let sampleMaxImg=5,sampleFn=null,sampleImages=false,dlCap=null,aiBusy=false,aiErr='';
 const guideAI={busy:'',msg:{}};
-const apiKey=()=>(lsGet(LS_KEY)||'').trim();
+const aiMem={k:''};
+const apiKey=()=>(lsGet(LS_KEY)||aiMem.k||'').trim();
+function aiGem(){
+  const el=$('#apiKey'),k=((el&&el.value)||'').trim();
+  aiMem.k=k;const ok=lsSet(LS_KEY,k)&&lsGet(LS_KEY)===k;
+  toast(ok?(k?'AI-nøglen er gemt i denne browser':'AI-nøglen er fjernet'):'Browseren tillader ikke at gemme (privat fane?). Nøglen huskes kun, til du lukker siden.');
+  render(true);
+}
 const aiAvailable=()=>!!sampleFn||!!apiKey();
 const aiImages=()=>(!!sampleFn&&sampleImages)||!!apiKey();
 function dataURLtoBlob(d){const b=atob(d.split(',')[1]),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Blob([u],{type:'image/jpeg'});}
@@ -1637,9 +1645,9 @@ function bbrMere(){
 document.addEventListener('input',e=>{const t=e.target;if(t.id==='dfKey'){dfMem.k=t.value.trim();lsSet(LS_DF,dfMem.k);bbr.cols=null;}else if(t.id==='dfProxy'){dfMem.p=t.value.trim();lsSet(LS_DFP,dfMem.p);}});
 document.addEventListener('change',e=>{if(e.target.id==='dfKey'||e.target.id==='dfProxy')dfGem();});
 document.addEventListener('click',e=>{
-  const b=e.target.closest('[data-act^="bbr-"]');if(!b)return;
+  const b=e.target.closest('[data-act^="bbr-"],[data-act="ai-gem"]');if(!b)return;
   const c=cur(),a=b.dataset.act,i=+b.dataset.i;
-  if(a==='bbr-gem')dfGem();else if(a==='bbr-soeg')bbrSoeg(c);else if(a==='bbr-adr')bbrHentBygninger(c,i);else if(a==='bbr-brug'&&bbr.bygninger[i])bbrApply(c,bbr.bygninger[i]);
+  if(a==='bbr-gem')dfGem();else if(a==='ai-gem')aiGem();else if(a==='bbr-soeg')bbrSoeg(c);else if(a==='bbr-adr')bbrHentBygninger(c,i);else if(a==='bbr-brug'&&bbr.bygninger[i])bbrApply(c,bbr.bygninger[i]);
 });
 
 /* ============ Start ============ */
