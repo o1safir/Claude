@@ -739,6 +739,7 @@ function vGuide(c){
     qc('Sådan kommer du hurtigst igennem',`<ol class="next"><li><b>Hjemmefra:</b> skriv adressen, og hent BBR-meddelelsen og et evt. tidligere energimærke (se nedenfor).</li><li><b>På stedet:</b> gå guiden igennem, mens du går rundt om og ind i huset. Brug AI-foto-knapperne og mål op med ${maalBtn('oversigt','opmålingsguiden')}.</li><li><b>Bagefter:</b> tjek alt, der er markeret <span class="pill warn">skønnet</span>, og se fanen Energy10.</li></ol>`)+
     qc('Har du BBR-meddelelse eller et tidligere energimærke?',aiRow('dok','Vælg skærmbilleder / tag foto – AI udfylder')+(aiImages()?'':'<p class="hint" style="margin:0">AI er ikke slået til her – åbn værktøjet i Claude-appen for at bruge det.</p>'),'Hent BBR-meddelelsen på bbr.dk og et tidligere energimærke på sparenergi.dk (Find energimærke) – søg på adressen. Tag skærmbilleder af siderne, og vælg dem her. AI udfylder byggeår, areal, vægtype, varmekilde m.m. Du kan rette alt bagefter.')+
     qc('Adresse',`<div class="grid">${field('Adresse','bygning.adresse',B.adresse,{ph:'Vej og nr.'})}${field('Postnr.','bygning.postnr',B.postnr,{num:true})}${field('By','bygning.by',B.by)}</div>`)+
+    qc('Hent bygningsdata automatisk fra BBR',bbrKort(c),'Skriv adresse og postnr. herunder, og tryk på knappen. Kræver en Datafordeler API-nøgle (Mere).')+
     qc('Hvornår er huset bygget?',`<div class="grid">${field('Byggeår','bygning.opfoert',B.opfoert,{num:true,ph:'fx 1968',hint:'Står i BBR-meddelelsen (bbr.dk) eller på boligsiden.'})}${field('Boligareal','bygning.areal',B.areal,{unit:'m²',help:'areal',hint:'Fra BBR. Kan stå tomt – så beregnes det ud fra målene.'})}</div><div class="era" data-calc="era"></div>`)+
     qc('Hvilken slags hus?',chips('bygning.anvendelse',B.anvendelse,[['120','Fritliggende hus'],['132','Dobbelthus'],['131','Rækkehus'],['510','Sommerhus']]))+
     qc('Hvor mange etager?',chips('guide.etager',g.etager,[['1','1 plan'],['1.5','1½ plan','værelser under skrå vægge'],['2','2 plan','to hele etager']]))+
@@ -1082,6 +1083,7 @@ function vMere(c){
     ${sampleFn?'':`<label class="f full" for="apiKey"><span>Anthropic API-nøgle (valgfri)</span><input type="text" id="apiKey" value="${esc(key)}" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"><p class="hint">Gemmes kun i denne browser. Opret en nøgle på console.anthropic.com.</p></label>
     <label class="f" for="apiModel"><span>Model</span><select id="apiModel">${[['claude-opus-5','Claude Opus 5 (anbefalet)'],['claude-sonnet-5','Claude Sonnet 5 (billigere)']].map(([k,v])=>`<option value="${k}"${model===k?' selected':''}>${v}</option>`).join('')}</select></label>`}
   </div></section>
+  ${bbrMere()}
   <section class="block"><div class="block-h"><h3>Om værdierne</h3></div><div class="panel"><p class="hint" style="margin:0">U-værdier, ψ-værdier, rudeværdier og b-faktorer i listerne er vejledende standardværdier til hurtig registrering. Kontrollér altid mod Håndbog for Energikonsulenter og de faktiske forhold, før data tastes i Energy10 – du står inde for energimærket.</p></div></section>`;
 }
 
@@ -1526,6 +1528,109 @@ async function importCase(file){
 }
 let toastT=null;
 function toast(msg){let t=$('.toast');if(!t){t=document.createElement('div');t.className='toast';t.setAttribute('role','status');document.body.appendChild(t);}t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true;},2600);}
+
+/* ============ BBR-opslag via Datafordeler (GraphQL) ============ */
+const LS_DF='em10.feltbog.dfkey', LS_DFP='em10.feltbog.dfproxy';
+const dfKey=()=>(lsGet(LS_DF)||'').trim(), dfProxy=()=>(lsGet(LS_DFP)||'').trim().replace(/\/+$/,'');
+const bbr={busy:false,msg:null,hits:[],bygninger:[],cols:null,raw:''};
+/* BBR-felter vi vil have (første tal i feltnavnet er BBR's feltnummer; selve navnet slås op i skemaet) */
+const BBR_KODER={anv:'byg021',aar:'byg026',omb:'byg027',vaeg:'byg032',boligareal:'byg039',kaelder:'byg044',tag:'byg045',etager:'byg054',varme:'byg056',middel:'byg057',suppl:'byg058'};
+const BBR_GAET={byg021:'byg021BygningensAnvendelse',byg026:'byg026Opfoerelsesaar',byg027:'byg027OmTilbygningsaar',byg032:'byg032YdervaeggensMateriale',byg039:'byg039BygningensSamledeBoligAreal',byg044:'byg044ArealAfUdnyttetKaelder',byg045:'byg045ArealAfUdnyttetTagetage',byg054:'byg054AntalEtager',byg056:'byg056Varmeinstallation',byg057:'byg057Opvarmningsmiddel',byg058:'byg058SupplerendeVarme'};
+async function dfPost(reg,ver,query){
+  const key=dfKey(),px=dfProxy();
+  if(!key&&!px)throw new Error('Indsæt din Datafordeler API-nøgle under Mere først.');
+  const url=px?`${px}/${reg}/${ver}`:`https://graphql.datafordeler.dk/${reg}/${ver}?apiKey=${encodeURIComponent(key)}`;
+  let res;
+  try{res=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query})});}
+  catch(e){throw new Error('Kunne ikke nå Datafordeleren. Enten er der ingen netforbindelse, eller også blokerer Datafordeleren kald direkte fra browseren (CORS). Så skal du bruge proxyen (se Mere).');}
+  const txt=await res.text();bbr.raw=txt.slice(0,4000);
+  let j;try{j=JSON.parse(txt);}catch(e){throw new Error(`Datafordeleren svarede ${res.status} (ikke JSON). ${txt.slice(0,150)}`);}
+  if(j.errors&&j.errors.length&&!j.data)throw new Error('Datafordeleren: '+j.errors.map(x=>x.message).join(' | ').slice(0,300));
+  if(!res.ok)throw new Error(`Datafordeleren svarede ${res.status}.`);
+  return j.data;
+}
+const dfTid=()=>new Date().toISOString().replace(/\.\d+Z$/,'Z');
+const gq=s=>JSON.stringify(String(s));
+async function bbrCols(){
+  if(bbr.cols)return bbr.cols;
+  let names=[];
+  try{const d=await dfPost('BBR','v3','{ __type(name:"BBR_Bygning"){ fields{ name } } }');names=((d&&d.__type&&d.__type.fields)||[]).map(f=>f.name);}catch(e){names=[];}
+  const m={};
+  for(const k of Object.values(BBR_KODER))m[k]=names.find(n=>n.startsWith(k))||(names.length?null:BBR_GAET[k]);
+  bbr.cols=m;return m;
+}
+async function bbrSoeg(c){
+  const B=c.bygning;
+  const q=[B.adresse,[B.postnr,B.by].filter(Boolean).join(' ')].filter(x=>x&&x.trim()).join(', ').trim();
+  if(!B.adresse||!B.postnr){toast('Skriv vej, husnummer og postnr. først');return;}
+  bbr.busy=true;bbr.msg=null;bbr.hits=[];bbr.bygninger=[];render(true);
+  try{
+    const t=dfTid();
+    const d=await dfPost('DAR','v3',`{ DAR_Adresse(first:10, virkningstid:${gq(t)}, registreringstid:${gq(t)}, where:{ adressebetegnelse:{ startsWith:${gq(q)} } }){ nodes{ id_lokalId adressebetegnelse husnummer } } }`);
+    bbr.hits=((d&&d.DAR_Adresse&&d.DAR_Adresse.nodes)||[]).filter(x=>x.husnummer);
+    if(!bbr.hits.length)bbr.msg={t:'Ingen adresse fundet. Tjek stavemåden (fx "Egevej 12" og postnr.).',err:true};
+    else if(bbr.hits.length===1){bbr.busy=false;await bbrHentBygninger(c,0);return;}
+  }catch(e){bbr.msg={t:e.message,err:true};}
+  bbr.busy=false;render(true);
+}
+async function bbrHentBygninger(c,i){
+  const h=bbr.hits[i];if(!h)return;
+  bbr.busy=true;bbr.msg=null;render(true);
+  try{
+    const cols=await bbrCols(),t=dfTid();
+    const felter=['id_lokalId',...Object.values(cols).filter(Boolean)].join(' ');
+    const d=await dfPost('BBR','v3',`{ BBR_Bygning(first:30, virkningstid:${gq(t)}, registreringstid:${gq(t)}, where:{ husnummer:{ eq:${gq(h.husnummer)} } }){ nodes{ ${felter} } } }`);
+    bbr.bygninger=((d&&d.BBR_Bygning&&d.BBR_Bygning.nodes)||[]);
+    bbr.adr=h.adressebetegnelse;
+    bbr.msg=bbr.bygninger.length?null:{t:'Ingen bygninger fundet på adressen i BBR.',err:true};
+  }catch(e){bbr.msg={t:e.message,err:true};}
+  bbr.busy=false;render(true);
+}
+const kode=v=>{const m=String(v==null?'':v).match(/^\s*(\d+)/);return m?m[1]:'';};
+const BBR_ANV={'120':'Fritliggende enfamiliehus','121':'Sammenbygget enfamiliehus','122':'Enfamiliehus i tæt-lav bebyggelse','130':'Række-/kæde-/dobbelthus','131':'Rækkehus','132':'Dobbelthus','140':'Etagebolig','150':'Kollegium','160':'Døgninstitution','185':'Anneks i tilknytning til helårsbolig','190':'Anden bygning til helårsbeboelse','510':'Sommerhus','910':'Garage','920':'Carport','930':'Udhus','540':'Kolonihavehus'};
+function bbrVal(b,k){const col=bbr.cols&&bbr.cols[BBR_KODER[k]];return col?b[col]:undefined;}
+function bbrApply(c,b){
+  const B=c.bygning,g=G(c),done=[],v=k=>bbrVal(b,k),has=x=>x!=null&&x!==''&&x!=='null';
+  const anv=kode(v('anv'));if(ANVENDELSE[anv]){B.anvendelse=anv;done.push('hustype');}
+  if(has(v('aar'))){B.opfoert=String(v('aar'));done.push('byggeår');}
+  if(has(v('omb'))&&String(v('omb'))!=='0'){B.ombygget=String(v('omb'));done.push('ombygningsår');}
+  if(num(v('boligareal'))>0){B.areal=dk(num(v('boligareal')));done.push('boligareal');}
+  if(num(v('kaelder'))>0){B.arealKaelder=dk(num(v('kaelder')));done.push('kælderareal');}
+  const et=num(v('etager')),tag=num(v('tag'));
+  if(et>=1){const e=et>=2?'2':(tag>0?'1.5':'1');B.etager=et>=2?'2':'1';g.etager=e;done.push('etager');}
+  const vm=({'1':'tegl','2':'letbeton','4':'bindings','5':'trae','6':'beton'})[kode(v('vaeg'))];
+  if(vm){g.vaeg=vm;done.push('ydervæg');}
+  const vi=kode(v('varme')),mid=kode(v('middel'));let vk='';
+  if(vi==='1')vk='fjernvarme';else if(vi==='5')vk='vp_lv';else if(vi==='7'||mid==='1')vk='el';
+  else if(vi==='2'||vi==='6'){vk=mid==='3'?'olie':mid==='7'?'gas':mid==='4'?'pille':'';}
+  if(vk){g.varmeKilde=vk;done.push('varmekilde');}
+  B.noter=((B.noter||'').replace(/\n?Hentet fra BBR.*$/s,'')+`\nHentet fra BBR ${new Date().toLocaleDateString('da-DK')} (${bbr.adr||''}). Bygning ${BBR_ANV[anv]||anv||'?'}. Kontrollér på stedet.`).trim();
+  c.updated=Date.now();save();
+  bbr.msg={t:`Udfyldt fra BBR: ${done.join(', ')||'intet'}. BBR kan være forældet, så tjek alt på stedet. Varmekilde og ydervæg er koder, der kan være upræcise (fx varmepumpe: luft eller jord).`};
+  render(true);
+}
+function bbrKort(c){
+  const nodes=bbr.bygninger;
+  const hits=bbr.hits.length>1&&!nodes.length?`<div class="chips">${bbr.hits.map((h,i)=>`<button type="button" class="chip" data-act="bbr-adr" data-i="${i}">${esc(h.adressebetegnelse)}</button>`).join('')}</div>`:'';
+  const liste=nodes.length?`<div style="display:flex;flex-direction:column;gap:8px">${nodes.map((b,i)=>{const a=kode(bbrVal(b,'anv'));return `<div class="row" style="justify-content:space-between;align-items:center"><span>${esc(BBR_ANV[a]||('Anvendelse '+(a||'?')))} · bygget ${esc(String(bbrVal(b,'aar')||'?'))} · ${esc(String(bbrVal(b,'boligareal')||'0'))} m²</span><button type="button" class="btn sm pri" data-act="bbr-brug" data-i="${i}">Brug</button></div>`}).join('')}</div>`:'';
+  const msg=bbr.msg?`<p class="hint" style="margin:0;${bbr.msg.err?'color:var(--danger,#b3261e)':''}">${esc(bbr.msg.t)}</p>`:'';
+  const nokkel=(dfKey()||dfProxy())?'':'<p class="hint" style="margin:0">Indsæt din Datafordeler API-nøgle under Mere for at bruge dette.</p>';
+  return `<div style="display:flex;flex-direction:column;gap:10px"><div class="row"><button type="button" class="btn pri" data-act="bbr-soeg" ${bbr.busy?'disabled':''}>${bbr.busy?'Henter…':'Hent fra BBR'}</button></div>${nokkel}${hits}${liste}${msg}</div>`;
+}
+function bbrMere(){
+  return `<section class="block"><div class="block-h"><h3>BBR (Datafordeleren)</h3><span class="pill ${dfKey()||dfProxy()?'ok':'warn'}">${dfProxy()?'Via proxy':dfKey()?'Nøgle gemt':'Ikke sat op'}</span></div><div class="panel grid wide">
+    <p class="hint full" style="grid-column:1/-1;margin:0">Henter bygningsdata automatisk ud fra adressen. Opret et IT-system og en API-nøgle på datafordeler.dk (login med MitID Erhverv) med adgang til BBR og DAR. Nøglen gemmes kun i denne browser.</p>
+    <label class="f full" for="dfKey"><span>Datafordeler API-nøgle</span><input type="text" id="dfKey" value="${esc(dfKey())}" autocomplete="off" spellcheck="false"></label>
+    <label class="f full" for="dfProxy"><span>Proxy-adresse (valgfri)</span><input type="text" id="dfProxy" value="${esc(dfProxy())}" placeholder="https://…workers.dev" autocomplete="off" spellcheck="false"><p class="hint">Kun nødvendig, hvis browseren blokerer direkte kald. Så ligger nøglen i proxyen i stedet (se energimaerke/proxy/README.md).</p></label>
+    ${bbr.raw?`<details class="full" style="grid-column:1/-1"><summary class="hint">Seneste svar fra Datafordeleren (til fejlsøgning)</summary><pre style="white-space:pre-wrap;word-break:break-all;font-size:11px">${esc(bbr.raw)}</pre></details>`:''}
+  </div></section>`;
+}
+document.addEventListener('input',e=>{const t=e.target;if(t.id==='dfKey'){lsSet(LS_DF,t.value.trim());bbr.cols=null;}else if(t.id==='dfProxy'){lsSet(LS_DFP,t.value.trim());}});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act^="bbr-"]');if(!b)return;
+  const c=cur(),a=b.dataset.act,i=+b.dataset.i;
+  if(a==='bbr-soeg')bbrSoeg(c);else if(a==='bbr-adr')bbrHentBygninger(c,i);else if(a==='bbr-brug'&&bbr.bygninger[i])bbrApply(c,bbr.bygninger[i]);
+});
 
 /* ============ Start ============ */
 state=load();

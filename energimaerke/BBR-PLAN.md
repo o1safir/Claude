@@ -1,6 +1,6 @@
 # Plan: automatisk BBR-opslag i Energimærke Feltbog
 
-Status: afventer adgang til Datafordeleren fra udviklingsmiljøet, så API'et kan testes.
+Status: implementeret og testet mod en simuleret Datafordeler (mock). IKKE testet mod det rigtige API endnu: feltnavne slås op via introspektion (BBR_Bygning), men DAR_Adresse-filteret (adressebetegnelse startsWith) og kodelisterne skal verificeres med en rigtig nøgle. Se Mere -> BBR for seneste rå svar. Proxy: energimaerke/proxy/.
 
 ## Løsning (valgt: mulighed 1)
 - Værktøjet (`energimaerke/index.html`) hostes på GitHub Pages fra branchen
