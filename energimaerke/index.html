@@ -271,6 +271,14 @@ text.d-h{fill:currentColor;font:700 12px var(--f-display)}
 .msg.ai{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line-2)}
 .chat-in{display:flex;gap:8px;align-items:flex-end}
 .chat-in textarea{min-height:48px}
+.chat-att{min-height:48px;padding:0 12px;flex:none}
+.chat-att svg{width:20px;height:20px}
+.pend{display:flex;gap:8px;flex-wrap:wrap}
+.pend-i{position:relative;width:64px;height:64px}
+.pend-i img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pend-i button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);font-size:11px;cursor:pointer;padding:0}
+.msg-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.msg-imgs img{width:96px;height:96px;object-fit:cover;border-radius:6px;display:block}
 .smart{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
 .smart p{margin:0;font-size:13.5px;color:var(--ink-2);max-width:52ch}
 </style>
@@ -1222,6 +1230,7 @@ document.addEventListener('input',e=>{
   if(t.dataset.b){setPath(c,t.dataset.b,t.value);c.updated=Date.now();const q=t.dataset.b.split('.');if(['flader','vinduer'].includes(q[0])&&['U','Uw','l','h','areal','antal','b'].includes(q[2])){const it=getItem(c,q[0],q[1]);if(it)it.skoen=false;}if(t.tagName!=='SELECT'){save();updateCalcs();}}
   else if(t.dataset.gv){const[k,rid,fk]=t.dataset.gv.split(':');const r=vRows(G(c),k).find(x=>x.id===rid);if(r){r[fk]=t.value;if((fk==='b'||fk==='h')&&/^Tidligere registreret/.test(r.note||''))r.note='';save();updateCalcs();}}
   else if(t.dataset.lag){const[id,i,k]=t.dataset.lag.split(':');const f=getItem(c,'flader',id);if(f&&f.lag[i]){f.lag[i][k]=t.value;save();updateCalcs();}}
+  else if(t.id==='chatIn'){chat.draft=t.value;}
   else if(t.id==='apiKey'){lsSet(LS_KEY,t.value.trim());}
 });
 document.addEventListener('change',async e=>{
@@ -1230,6 +1239,7 @@ document.addEventListener('change',async e=>{
   if(t.tagName==='SELECT'&&t.dataset.lag){const[id,i,k]=t.dataset.lag.split(':');const f=getItem(c,'flader',id);f.lag[i][k]=t.value;save();render(true);return;}
   if(t.id==='apiModel'){lsSet(LS_MODEL,t.value);return;}
   if(t.dataset.aiGuide&&t.files&&t.files[0]){const fs=[...t.files];t.value='';guideAIRun(c,t.dataset.aiGuide,t.dataset.aiGuide==='dok'?fs:fs[0]);return;}
+  if(t.dataset.chatImg&&t.files&&t.files.length){const fs=[...t.files];t.value='';const room=Math.max(0,(sampleFn?sampleMaxImg:5)-chat.pending.length);if(fs.length>room)toast(`Højst ${sampleFn?sampleMaxImg:5} billeder pr. spørgsmål`);for(const f of fs.slice(0,room)){try{chat.pending.push(await readImage(f));}catch(err){toast(err.message);}}vChat();const i=$('#chatIn');if(i)i.focus();return;}
   if(t.dataset.smart&&t.files&&t.files[0]){const f=t.files[0];t.value='';try{const data=await readImage(f);const id=uid();await PhotoDB.put(id,data);c.fotos.push({id,kategori:'andet',element:'',note:'',t:new Date().toLocaleString('da-DK'),ai:null});save();render(true);sheetPhoto=id;runAI(id,true);}catch(err){toast(err.message);}return;}
   if(t.dataset.fotoKat&&t.files&&t.files.length){await addPhotos(c,[...t.files],t.dataset.fotoKat,t.dataset.fotoEl||'');t.value='';return;}
   if(t.id==='importFile'&&t.files[0]){importCase(t.files[0]);t.value='';}
@@ -1249,6 +1259,7 @@ document.addEventListener('click',async e=>{
   if(act==='gstep'){G(c).step=+b.dataset.v;save();render();return;}
   if(act==='chat-open'){chat.open=true;sheetPhoto=null;vChat();const i=$('#chatIn');if(i)i.focus();return;}
   if(act==='chat-q'){chatSend(b.dataset.v);return;}
+  if(act==='chat-unimg'){chat.pending.splice(+b.dataset.i,1);vChat();return;}
   if(act==='chat-stop'){if(chat.ctl)chat.ctl.abort();return;}
   if(b.classList.contains('danger')&&!b.classList.contains('armed')){$$('.armed').forEach(x=>{x.classList.remove('armed');x.textContent=x.dataset.label;});b.dataset.label=b.textContent;b.classList.add('armed');b.textContent='Bekræft sletning';clearTimeout(armed);armed=setTimeout(()=>{b.classList.remove('armed');b.textContent=b.dataset.label;},4000);return;}
   switch(act){
@@ -1281,9 +1292,9 @@ document.addEventListener('click',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&(sheetPhoto||chat.open||maalKey)){sheetPhoto=null;chat.open=false;maalKey=null;$('#sheet').innerHTML='';}
-  if(e.key==='Enter'&&!e.shiftKey&&e.target.id==='chatIn'){e.preventDefault();const v=e.target.value;e.target.value='';chatSend(v);}
+  if(e.key==='Enter'&&!e.shiftKey&&e.target.id==='chatIn'){e.preventDefault();const v=e.target.value;e.target.value='';chat.draft='';chatSend(v);}
 });
-document.addEventListener('submit',e=>{if(e.target.id==='chatForm'){e.preventDefault();const t=$('#chatIn');const v=t.value;t.value='';chatSend(v);}});
+document.addEventListener('submit',e=>{if(e.target.id==='chatForm'){e.preventDefault();const t=$('#chatIn');const v=t.value;t.value='';chat.draft='';chatSend(v);}});
 
 async function addPhotos(c,files,kat,el){
   let n=0;
@@ -1453,7 +1464,7 @@ async function dokAIRun(c,files){
   guideAI.busy='';save();render(true);
 }
 /* Spørg: chat med sagen som kontekst */
-const chat={open:false,turns:[],busy:false,live:'',err:'',ctl:null};
+const chat={open:false,turns:[],busy:false,live:'',err:'',ctl:null,pending:[],draft:''};
 const CHAT_REGLER=`Du er en tålmodig hjælper for en dansk energikonsulent under uddannelse, som ikke er byggeteknisk uddannet. Svar kort og konkret på dansk i almindeligt sprog. Undgå fagjargon – forklar et fagudtryk, hvis du bruger det. Når det handler om registrering, så sig præcist hvad personen skal kigge efter, måle eller fotografere, og hvor i værktøjet det skal ind (fanerne hedder Start/guide, Klimaskærm, Anlæg, Fotos, Energy10). Værktøjet samler data til energimærkning i programmet Energy10 (Be18-beregning). Hvis du ikke er sikker på en regel eller en standardværdi, så sig det og henvis til Håndbog for Energikonsulenter – opfind aldrig regler. Hold dig til ca. 150 ord, med mindre der spørges om mere.`;
 function caseSummary(c){
   const B=c.bygning,r=calc(c);
@@ -1463,11 +1474,18 @@ function caseSummary(c){
     `Varme: ${KILDER[c.varme.kilde]||'ikke valgt'} ${[c.varme.fabrikat,c.varme.aar].filter(Boolean).join(' ')}. Ventilation: ${VENT[c.vent.type]}. H_T ${fmt(r.HT,1)} W/K.`].join('\n');
 }
 async function chatSend(text){
-  text=(text||'').trim();if(!text||chat.busy)return;
-  const c=cur();chat.turns.push({role:'user',content:text});chat.busy=true;chat.live='';chat.err='';chat.ctl=new AbortController();vChat();
-  const turns=[{role:'user',content:`${CHAT_REGLER}\n\nSagen lige nu:\n${caseSummary(c)}\n\nBrugeren står på fanen: ${state.tab}.`},...chat.turns.slice(-12)];
+  text=(text||'').trim();const imgs=chat.pending.slice();
+  if((!text&&!imgs.length)||chat.busy)return;
+  if(!text)text='Hvad ser du på billedet, og hvad betyder det for energimærket?';
+  const c=cur();chat.pending=[];chat.draft='';
+  // Billeder gemmes også på sagen som dokumentation
+  for(const d of imgs){const pid=uid();await PhotoDB.put(pid,d);c.fotos.push({id:pid,kategori:'andet',element:'',note:`Fra Spørg: ${text.slice(0,60)}`,t:new Date().toLocaleString('da-DK'),ai:null});}
+  if(imgs.length)save();
+  chat.turns.push({role:'user',content:text,imgs});chat.busy=true;chat.live='';chat.err='';chat.ctl=new AbortController();vChat();
+  const hist=chat.turns.slice(-12).map((t,i,a)=>({role:t.role,content:t.content+(t.imgs&&t.imgs.length?(i===a.length-1?`\n\n(${t.imgs.length} billede${t.imgs.length>1?'r':''} vedhæftet – se på ${t.imgs.length>1?'dem':'det'} og svar ud fra det.)`:`\n\n(Brugeren vedhæftede ${t.imgs.length} billede${t.imgs.length>1?'r':''} her.)`):'')}));
+  const turns=[{role:'user',content:`${CHAT_REGLER}\n\nSagen lige nu:\n${caseSummary(c)}\n\nBrugeren står på fanen: ${state.tab}.`},...hist];
   try{
-    const ans=await askAI(null,{json:false,turns,signal:chat.ctl.signal,onText:({text})=>{chat.live=text;const el=$('#chatLive');if(el)el.textContent=text;}});
+    const ans=await askAI(null,{json:false,turns,images:imgs,signal:chat.ctl.signal,onText:({text})=>{chat.live=text;const el=$('#chatLive');if(el)el.textContent=text;}});
     chat.turns.push({role:'assistant',content:ans});
   }catch(e){if(e.partial)chat.turns.push({role:'assistant',content:e.partial});if(e.code!=='cancelled')chat.err=e.message;}
   chat.busy=false;chat.live='';chat.ctl=null;vChat();
@@ -1478,12 +1496,13 @@ function vChat(){
   $('#sheet').innerHTML=`<div class="sheet" data-act="close-sheet"><div class="sheet-in chat" role="dialog" aria-modal="true" aria-label="Spørg">
     <div class="block-h"><h3>Spørg om sagen</h3><button class="btn sm" data-act="close-sheet">Luk</button></div>
     ${aiAvailable()?'':'<p class="hint" style="color:var(--bad)">AI er ikke slået til her. Åbn værktøjet i Claude-appen, eller indsæt en API-nøgle under Mere.</p>'}
-    <div class="msgs">${chat.turns.length?'':'<p class="hint">Stil et spørgsmål – svaret tager højde for det, du har registreret på sagen.</p>'}
-      ${chat.turns.map(t=>`<div class="msg ${t.role==='user'?'me':'ai'}">${esc(t.content)}</div>`).join('')}
+    <div class="msgs">${chat.turns.length?'':`<p class="hint">Stil et spørgsmål – svaret tager højde for det, du har registreret på sagen.${aiImages()?' Du kan også trykke på kameraet og sende et billede, fx “hvad er det for et anlæg?”.':''}</p>`}
+      ${chat.turns.map(t=>`<div class="msg ${t.role==='user'?'me':'ai'}">${t.imgs&&t.imgs.length?`<span class="msg-imgs">${t.imgs.map(d=>`<img src="${d}" alt="Vedhæftet billede">`).join('')}</span>`:''}${esc(t.content)}</div>`).join('')}
       ${chat.busy?`<div class="msg ai" id="chatLive">${esc(chat.live||'Tænker …')}</div>`:''}
       ${chat.err?`<p class="hint" style="color:var(--bad)">${esc(chat.err)}</p>`:''}</div>
     ${chat.turns.length?'':`<div class="chips">${forslag.map(f=>`<button type="button" class="chip" data-act="chat-q" data-v="${esc(f)}">${esc(f)}</button>`).join('')}</div>`}
-    <form class="chat-in" id="chatForm"><textarea id="chatIn" rows="2" placeholder="Skriv dit spørgsmål …"></textarea>
+    ${chat.pending.length?`<div class="pend">${chat.pending.map((d,i)=>`<span class="pend-i"><img src="${d}" alt="Billede klar til at sende"><button type="button" data-act="chat-unimg" data-i="${i}" aria-label="Fjern billede">✕</button></span>`).join('')}</div>`:''}
+    <form class="chat-in" id="chatForm">${aiImages()?`<label class="btn filebtn chat-att" aria-label="Vedhæft billede" title="Vedhæft billede">${I.cam}<input type="file" accept="image/*" multiple data-chat-img="1"${chat.busy?' disabled':''}></label>`:''}<textarea id="chatIn" rows="2" placeholder="${chat.pending.length?'Skriv evt. et spørgsmål til billedet …':'Skriv dit spørgsmål …'}">${esc(chat.draft)}</textarea>
       ${chat.busy?'<button type="button" class="btn" data-act="chat-stop">Stop</button>':'<button type="submit" class="btn pri">Send</button>'}</form>
   </div></div>`;
   const m=$('.msgs');if(m)m.scrollTop=m.scrollHeight;
