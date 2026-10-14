@@ -1531,7 +1531,15 @@ function toast(msg){let t=$('.toast');if(!t){t=document.createElement('div');t.c
 
 /* ============ BBR-opslag via Datafordeler (GraphQL) ============ */
 const LS_DF='em10.feltbog.dfkey', LS_DFP='em10.feltbog.dfproxy';
-const dfKey=()=>(lsGet(LS_DF)||'').trim(), dfProxy=()=>(lsGet(LS_DFP)||'').trim().replace(/\/+$/,'');
+const dfMem={k:'',p:''};
+const dfKey=()=>(lsGet(LS_DF)||dfMem.k||'').trim(), dfProxy=()=>(lsGet(LS_DFP)||dfMem.p||'').trim().replace(/\/+$/,'');
+function dfGem(){
+  const k=($('#dfKey')||{}).value||'',p=($('#dfProxy')||{}).value||'';
+  dfMem.k=k.trim();dfMem.p=p.trim();bbr.cols=null;
+  const ok1=lsSet(LS_DF,dfMem.k),ok2=lsSet(LS_DFP,dfMem.p),ok=ok1&&ok2&&lsGet(LS_DF)===dfMem.k;
+  toast(ok?(dfMem.k||dfMem.p?'Gemt i denne browser':'Nøglen er fjernet'):'Browseren tillader ikke at gemme (privat fane?). Nøglen huskes kun, til du lukker siden.');
+  render(true);
+}
 const bbr={busy:false,msg:null,hits:[],bygninger:[],cols:null,raw:''};
 /* BBR-felter vi vil have (første tal i feltnavnet er BBR's feltnummer; selve navnet slås op i skemaet) */
 const BBR_KODER={anv:'byg021',aar:'byg026',omb:'byg027',vaeg:'byg032',boligareal:'byg039',kaelder:'byg044',tag:'byg045',etager:'byg054',varme:'byg056',middel:'byg057',suppl:'byg058'};
@@ -1622,14 +1630,16 @@ function bbrMere(){
     <p class="hint full" style="grid-column:1/-1;margin:0">Henter bygningsdata automatisk ud fra adressen. Opret et IT-system og en API-nøgle på datafordeler.dk (login med MitID Erhverv) med adgang til BBR og DAR. Nøglen gemmes kun i denne browser.</p>
     <label class="f full" for="dfKey"><span>Datafordeler API-nøgle</span><input type="text" id="dfKey" value="${esc(dfKey())}" autocomplete="off" spellcheck="false"></label>
     <label class="f full" for="dfProxy"><span>Proxy-adresse (valgfri)</span><input type="text" id="dfProxy" value="${esc(dfProxy())}" placeholder="https://…workers.dev" autocomplete="off" spellcheck="false"><p class="hint">Kun nødvendig, hvis browseren blokerer direkte kald. Så ligger nøglen i proxyen i stedet (se energimaerke/proxy/README.md).</p></label>
+    <div class="row full" style="grid-column:1/-1"><button type="button" class="btn pri" data-act="bbr-gem">Gem</button><span class="hint">${dfKey()?'Gemt. Nøglen ligger kun i denne browser.':'Intet gemt endnu.'}</span></div>
     ${bbr.raw?`<details class="full" style="grid-column:1/-1"><summary class="hint">Seneste svar fra Datafordeleren (til fejlsøgning)</summary><pre style="white-space:pre-wrap;word-break:break-all;font-size:11px">${esc(bbr.raw)}</pre></details>`:''}
   </div></section>`;
 }
-document.addEventListener('input',e=>{const t=e.target;if(t.id==='dfKey'){lsSet(LS_DF,t.value.trim());bbr.cols=null;}else if(t.id==='dfProxy'){lsSet(LS_DFP,t.value.trim());}});
+document.addEventListener('input',e=>{const t=e.target;if(t.id==='dfKey'){dfMem.k=t.value.trim();lsSet(LS_DF,dfMem.k);bbr.cols=null;}else if(t.id==='dfProxy'){dfMem.p=t.value.trim();lsSet(LS_DFP,dfMem.p);}});
+document.addEventListener('change',e=>{if(e.target.id==='dfKey'||e.target.id==='dfProxy')dfGem();});
 document.addEventListener('click',e=>{
   const b=e.target.closest('[data-act^="bbr-"]');if(!b)return;
   const c=cur(),a=b.dataset.act,i=+b.dataset.i;
-  if(a==='bbr-soeg')bbrSoeg(c);else if(a==='bbr-adr')bbrHentBygninger(c,i);else if(a==='bbr-brug'&&bbr.bygninger[i])bbrApply(c,bbr.bygninger[i]);
+  if(a==='bbr-gem')dfGem();else if(a==='bbr-soeg')bbrSoeg(c);else if(a==='bbr-adr')bbrHentBygninger(c,i);else if(a==='bbr-brug'&&bbr.bygninger[i])bbrApply(c,bbr.bygninger[i]);
 });
 
 /* ============ Start ============ */
